@@ -18,7 +18,7 @@ class Osmek {
 	* API Version
 	* Set the API version you want to access
 	*/
-	var $api_version	= '3.0.9.6';
+	var $api_version	= '3.1.3';
 	
 	/* ---------------------------------------------------------------------
 	* Account ID
