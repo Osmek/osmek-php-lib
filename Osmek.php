@@ -69,13 +69,22 @@ class Osmek {
 	var $api_server			=	'http://api.osmek.com/';
 	
 	/* Did the API return a header of Osmek-Status: ok  */
-	var $osmek_status_ok	=	false;
+	var $osmek_status_ok	=	'unknown';
 	
 	/* Sections array. Stores section info if load_account() is called */
 	var $sections			=	array();
 	
 	/* Var to hold messages */
 	var $msg				=	'';
+	
+	/* How long to wait for Osmek response (in seconds) */
+	var $timeout_length		=	3;
+	
+	/* Have we experienced an Osmek timeout ? */
+	var $have_timeout		=	false;
+	
+	/* Headers from the last call */
+	var $last_headers		=	array();
 	
 	
 	
@@ -172,7 +181,7 @@ class Osmek {
 		/*
 		*	This could be done with CURL but we're using fsockopen for compatability in case CURL isn't installed
 		*/
-		$fp = fsockopen($host, $port, $errno, $errstr, 10); 
+		$fp = fsockopen($host, $port, $errno, $errstr, $this->timeout_length); 
 		if($fp)
 		{ 
 			$out = "POST $path HTTP/1.0\r\n"
@@ -183,9 +192,11 @@ class Osmek {
 					. $post_query . "\r\n";
 			
 			if(fwrite($fp, $out) === false) return false;
-			stream_set_timeout($fp, 10);
 			
-			while ( ! feof($fp))
+			stream_set_timeout($fp, $this->timeout_length, 0);
+			$info = stream_get_meta_data($fp);
+			
+			while ( ! feof($fp) && ! $info['timed_out'])
 			{ 
 				$line = fgets($fp, 10240); 
 			    if( ! $flag)
@@ -210,11 +221,26 @@ class Osmek {
 			    {
 					$response .= $line; 
 				} 
+				
+				$info = stream_get_meta_data($fp);
 			} 
-			$info = stream_get_meta_data($fp);
+			
 			fclose($fp);
 			
-			if($info['timed_out']) return false;
+			$this->last_headers = $headers;
+			
+			if($info['timed_out'])
+			{
+				$this->osmek_status_ok = false;
+				$this->have_timeout = true;
+				$response = false;
+			}
+		}
+		else
+		{
+			// Connection time out.
+			$this->osmek_status_ok = false;
+			$this->have_timeout = true;
 		}
 		
 		/*
@@ -269,7 +295,19 @@ class Osmek {
 		
 		$cache_path = $this->cache_folder.$cache_file;
 		
-		if ($cache && @file_exists($cache_path) && (( @filemtime($cache_path) + $this->cache_time ) > time()))
+		/* If Osmek isn't responding during this session, resort to cache */
+		if ($this->have_timeout || $this->osmek_status_ok === false)
+		{
+			if(@file_exists($cache_path))
+			{
+				$response = $this->read_cache($cache_path);
+			}
+			else
+			{
+				$response = false;
+			}
+		}
+		else if ($cache && @file_exists($cache_path) && (( @filemtime($cache_path) + $this->cache_time ) > time()))
 		{
 			// We're caching, and cache file is still good. Read the cache!
 			$response = $this->read_cache($cache_path);
