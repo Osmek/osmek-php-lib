@@ -77,7 +77,7 @@ class Osmek {
 	/* Var to hold messages */
 	var $msg				=	'';
 	
-	/* How long to wait for Osmek response (in seconds) */
+	/* How long to wait for Osmek response (in seconds). After this, cache will be used. */
 	var $timeout_length		=	3;
 	
 	/* Have we experienced an Osmek timeout ? */
@@ -85,6 +85,12 @@ class Osmek {
 	
 	/* Headers from the last call */
 	var $last_headers		=	array();
+	
+	/* Write Errors ? */
+	var $error_log			=	true;
+	
+	/* Error log location */
+	var $error_log_file		=	'./cache/error_log.txt';
 	
 	
 	
@@ -231,6 +237,7 @@ class Osmek {
 			
 			if($info['timed_out'])
 			{
+				$this->log_error('READ TIMEOUT: ['.$this->api_server.'], query: '.$post_query);
 				$this->osmek_status_ok = false;
 				$this->have_timeout = true;
 				$response = false;
@@ -239,6 +246,7 @@ class Osmek {
 		else
 		{
 			// Connection time out.
+			$this->log_error('CONNECT TIMEOUT: ['.$this->api_server.'], query: '.$post_query);
 			$this->osmek_status_ok = false;
 			$this->have_timeout = true;
 		}
@@ -247,6 +255,11 @@ class Osmek {
 		*	Did Osmek return a status header?
 		*/
 		$this->osmek_status_ok = (isset($headers['Osmek-Status']) && $headers['Osmek-Status'] == 'ok') ? true : false;
+		
+		if($this->osmek_status_ok === false && $this->have_timeout === false)
+		{
+			$this->log_error('OSMEK STATUS "FAIL": ['.$this->api_server.'], query: '.$post_query);
+		}
 		
 		/*
 		*	Return response
@@ -360,6 +373,19 @@ class Osmek {
 		}
 		
 		return $data;
+	}
+	
+	
+	// --------------------------------------------------------------------
+		
+	/**
+	 * Write error log
+	 * 
+	 */
+	function log_error($err)
+	{
+		$err = '['.date('r').'] - '.$err;
+		@file_put_contents($this->error_log_file, $err, FILE_APPEND | LOCK_EX);
 	}
 	
 
